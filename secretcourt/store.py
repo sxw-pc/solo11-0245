@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS plans(id TEXT PRIMARY KEY,secret TEXT,gen INTEGER,gra
 CREATE TABLE IF NOT EXISTS members(plan_id TEXT,uid TEXT,grant_id TEXT,packet TEXT,status TEXT,PRIMARY KEY(plan_id,uid));
 CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY,plan_id TEXT,uid TEXT,kind TEXT,packet TEXT,at INTEGER);
 CREATE TABLE IF NOT EXISTS reseals(id TEXT PRIMARY KEY,secret TEXT,old_gen INTEGER,new_gen INTEGER,proof_id TEXT,status TEXT);
-CREATE TABLE IF NOT EXISTS orphans(id TEXT PRIMARY KEY,secret TEXT,gen INTEGER,uid TEXT,status TEXT);
+CREATE TABLE IF NOT EXISTS orphans(id TEXT PRIMARY KEY,secret TEXT,gen INTEGER,uid TEXT,status TEXT,isolation_receipt TEXT,cleared_at INTEGER);
 CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,subsystem TEXT,payload TEXT,result TEXT);
 """
 

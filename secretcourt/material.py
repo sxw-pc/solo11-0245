@@ -52,8 +52,8 @@ def run(db, r):
     if op == "proof":
         old = one(db, "SELECT * FROM lineage_proofs WHERE id=?", (r["id"],))
         if old:
-            same = (old["secret"], old["old_gen"], old["new_gen"], old["old_digest"], old["new_digest"]) == (
-                r["secret"], r["old_gen"], r["new_gen"], r["old_digest"], r["new_digest"])
+            same = (old["secret"], old["old_gen"], old["new_gen"], old["purpose"], old["old_digest"], old["new_digest"], old["at"]) == (
+                r["secret"], r["old_gen"], r["new_gen"], r["purpose"], r["old_digest"], r["new_digest"], r["at"])
             return {"decision": "reused" if same else "proof_identity_conflict"}
         secret = one(db, "SELECT * FROM secrets WHERE id=?", (r["secret"],))
         before = one(db, "SELECT * FROM versions WHERE secret=? AND gen=?", (r["secret"], r["old_gen"]))

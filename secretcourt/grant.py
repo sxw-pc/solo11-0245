@@ -22,7 +22,9 @@ def run(db, r):
             return {"decision": "empty_policy"}
         old = one(db, "SELECT * FROM policies WHERE purpose=?", (r["purpose"],))
         if old and r["revision"] <= old["revision"]:
-            return {"decision": "stale_policy"}
+            same = (old["revision"] == r["revision"] and json.loads(old["fields"]) == sorted(set(r["fields"]))
+                    and json.loads(old["environments"]) == sorted(set(r["environments"])))
+            return {"decision": "reused" if same else "stale_policy"}
         db.execute("INSERT INTO policies VALUES(?,?,?,?) ON CONFLICT(purpose) DO UPDATE SET fields=excluded.fields,environments=excluded.environments,revision=excluded.revision",
                    (r["purpose"], json.dumps(sorted(set(r["fields"]))), json.dumps(sorted(set(r["environments"]))), r["revision"]))
         frozen = []

@@ -67,7 +67,7 @@ def run(db, r):
                     (r["secret"], r["gen"], r["uid"]) else "orphan_identity_conflict"}
         if not one(db, "SELECT 1 FROM versions WHERE secret=? AND gen=?", (r["secret"], r["gen"])):
             return {"decision": "unknown_version"}
-        db.execute("INSERT INTO orphans VALUES(?,?,?,?,?)", (r["id"], r["secret"], r["gen"], r["uid"], "quarantined"))
+        db.execute("INSERT INTO orphans VALUES(?,?,?,?,?,?,?)", (r["id"], r["secret"], r["gen"], r["uid"], "quarantined", None, None))
         reopened = db.execute("UPDATE reseals SET status='reopened' WHERE secret=? AND old_gen=? AND status='complete'",
                               (r["secret"], r["gen"])).rowcount
         if reopened:
@@ -86,10 +86,12 @@ def run(db, r):
         if not old:
             return {"decision": "unknown_orphan"}
         if old["status"] == "cleared":
-            return {"decision": "reused"}
+            same = old["uid"] == r.get("uid") and old["isolation_receipt"] == r.get("isolation_receipt")
+            return {"decision": "reused" if same else "isolation_evidence_conflict"}
         if not r.get("isolation_receipt") or r.get("uid") != old["uid"]:
             return {"decision": "missing_isolation_evidence"}
-        db.execute("UPDATE orphans SET status='cleared' WHERE id=?", (r["id"],))
+        db.execute("UPDATE orphans SET status='cleared',isolation_receipt=?,cleared_at=? WHERE id=?",
+                   (r["isolation_receipt"], r.get("at", 0), r["id"]))
         return {"decision": "cleared"}
     if op == "close_reseal":
         case = one(db, "SELECT * FROM reseals WHERE id=?", (r["id"],))

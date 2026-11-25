@@ -126,6 +126,14 @@ class SecretCourtTests(unittest.TestCase):
         self.assertEqual(one(self.db,"SELECT status FROM plans WHERE id='plan-old'")["status"],"frozen")
         self.assertEqual(invoke(self.db,"grant",json.loads((ROOT/"fixtures"/"grant_normal.json").read_text(encoding="utf-8"))[7])["decision"],"grant_inactive")
 
+    def test_policy_retry_keeps_business_identity_and_rejects_changed_scope(self):
+        self.fixture("material", "material_normal.json")
+        policy=json.loads((ROOT/"fixtures"/"grant_normal.json").read_text(encoding="utf-8"))[2]
+        self.assertEqual(invoke(self.db,"grant",policy)["decision"],"policy_active")
+        self.assertEqual(invoke(self.db,"grant",policy)["decision"],"reused")
+        changed=dict(policy,fields=["other-field"])
+        self.assertEqual(invoke(self.db,"grant",changed)["decision"],"stale_policy")
+
     def test_reseal_requires_persisted_purpose_and_digest_proof(self):
         self.base()
         steps=json.loads((ROOT/"fixtures"/"material_failure.json").read_text(encoding="utf-8"))
@@ -153,6 +161,8 @@ class SecretCourtTests(unittest.TestCase):
         self.assertEqual(one(self.db,"SELECT status FROM grants WHERE id='grant-a-2'")["status"],"frozen")
         self.assertEqual(invoke(self.db,"delivery",{"op":"close_reseal","id":"reseal-one"})["decision"],"orphan_copy_remains")
         self.assertEqual(invoke(self.db,"delivery",{"op":"resolve_orphan","id":"late-copy","uid":"late-uid","isolation_receipt":"late-isolate"})["decision"],"cleared")
+        self.assertEqual(one(self.db,"SELECT isolation_receipt FROM orphans WHERE id='late-copy'")["isolation_receipt"],"late-isolate")
+        self.assertEqual(invoke(self.db,"delivery",{"op":"resolve_orphan","id":"late-copy","uid":"late-uid","isolation_receipt":"forged"})["decision"],"isolation_evidence_conflict")
         self.assertEqual(invoke(self.db,"delivery",{"op":"close_reseal","id":"reseal-one"})["decision"],"reseal_complete")
         self.assertEqual(one(self.db,"SELECT status FROM versions WHERE secret='payments' AND gen=2")["status"],"active")
 
