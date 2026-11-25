@@ -1,0 +1,5 @@
+[
+  {"op":"plan","id":"plan-old","secret":"payments","gen":1,"packet":"sha256:packet-one","at":20,"members":[{"uid":"uid-a","grant":"grant-a-1"},{"uid":"uid-b","grant":"grant-b-1"}]},
+  {"op":"receipt","id":"receipt-old-a","plan":"plan-old","uid":"uid-a","kind":"delivered","packet":"sha256:packet-one","at":21},
+  {"op":"receipt","id":"receipt-old-b","plan":"plan-old","uid":"uid-b","kind":"delivered","packet":"sha256:packet-one","at":22}
+]

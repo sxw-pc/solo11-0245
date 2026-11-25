@@ -1,0 +1,10 @@
+[
+  {"op":"issue","id":"forged-old","secret":"payments","gen":1,"identity":"worker-a","uid":"uid-a","namespace":"checkout","environment":"prod","fields":["signing-key"],"until":100,"at":30,"approvers":["security","owner"]},
+  {"op":"issue","id":"wide-scope","secret":"payments","gen":2,"identity":"worker-a","uid":"uid-a","namespace":"checkout","environment":"prod","fields":["root-password"],"until":100,"at":30,"approvers":["security","owner"]},
+  {"op":"approve","id":"approve-a2-security","grant":"grant-a-2","actor":"security","role":"security","at":29,"until":90},
+  {"op":"approve","id":"approve-a2-owner","grant":"grant-a-2","actor":"owner","role":"owner","at":29,"until":90},
+  {"op":"approve","id":"approve-b2-security","grant":"grant-b-2","actor":"security","role":"security","at":29,"until":90},
+  {"op":"approve","id":"approve-b2-owner","grant":"grant-b-2","actor":"owner","role":"owner","at":29,"until":90},
+  {"op":"issue","id":"grant-a-2","secret":"payments","gen":2,"identity":"worker-a","uid":"uid-a","namespace":"checkout","environment":"prod","fields":["signing-key"],"until":100,"at":30,"approvers":["security","owner"]},
+  {"op":"issue","id":"grant-b-2","secret":"payments","gen":2,"identity":"worker-b","uid":"uid-b","namespace":"checkout","environment":"prod","fields":["signing-key"],"until":100,"at":30,"approvers":["security","owner"]}
+]

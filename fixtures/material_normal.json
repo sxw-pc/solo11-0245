@@ -1,0 +1,4 @@
+[
+  {"op":"secret","id":"payments","purpose":"payment-signing"},
+  {"op":"seal","secret":"payments","gen":1,"digest":"sha256:material-one","parent":null}
+]

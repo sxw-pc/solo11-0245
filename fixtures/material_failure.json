@@ -1,0 +1,8 @@
+[
+  {"op":"seal","secret":"payments","gen":1,"digest":"sha256:forged","parent":null},
+  {"op":"expose","id":"incident-one","secret":"payments","gen":1,"from":23,"to":40},
+  {"op":"close_exposure","id":"incident-one"},
+  {"op":"seal","secret":"payments","gen":2,"digest":"sha256:material-two","parent":1},
+  {"op":"proof","id":"proof-two","secret":"payments","old_gen":1,"new_gen":2,"purpose":"payment-signing","old_digest":"sha256:material-one","new_digest":"sha256:material-two","at":30},
+  {"op":"reseal","id":"reseal-one","secret":"payments","old_gen":1,"new_gen":2,"proof":"proof-two"}
+]
