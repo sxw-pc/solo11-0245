@@ -43,12 +43,17 @@ def run(db, r):
         if r["kind"] not in ("delivered", "cleared"):
             return {"decision": "invalid_receipt_kind"}
         if r["kind"] == "delivered":
-            if plan["status"] == "frozen":
+            if plan["status"] not in ("planned", "partial"):
                 return {"decision": "plan_frozen"}
             grant = one(db, "SELECT * FROM grants WHERE id=?", (member["grant_id"],))
             identity = one(db, "SELECT * FROM identities WHERE id=?", (grant["identity"],)) if grant else None
             if not grant or grant["status"] != "active" or grant["until_ts"] < r["at"] or not identity or identity["uid"] != r["uid"]:
                 return {"decision": "member_no_longer_licensed"}
+        else:
+            previous = one(db, "SELECT 1 FROM receipts WHERE plan_id=? AND uid=? AND kind='delivered'",
+                           (r["plan"], r["uid"]))
+            if not previous:
+                return {"decision": "copy_never_delivered"}
         db.execute("INSERT INTO receipts VALUES(?,?,?,?,?,?)", (r["id"], r["plan"], r["uid"], r["kind"], r["packet"], r["at"]))
         db.execute("UPDATE members SET status=? WHERE plan_id=? AND uid=?", (r["kind"], r["plan"], r["uid"]))
         pending = one(db, "SELECT COUNT(*) n FROM members WHERE plan_id=? AND status='pending'", (r["plan"],))["n"]
@@ -65,6 +70,16 @@ def run(db, r):
         db.execute("INSERT INTO orphans VALUES(?,?,?,?,?)", (r["id"], r["secret"], r["gen"], r["uid"], "quarantined"))
         reopened = db.execute("UPDATE reseals SET status='reopened' WHERE secret=? AND old_gen=? AND status='complete'",
                               (r["secret"], r["gen"])).rowcount
+        if reopened:
+            new_generations = rows(db, "SELECT new_gen FROM reseals WHERE secret=? AND old_gen=? AND status='reopened'",
+                                   (r["secret"], r["gen"]))
+            for new in new_generations:
+                db.execute("UPDATE versions SET status='at_risk' WHERE secret=? AND gen=? AND status='active'",
+                           (r["secret"], new["new_gen"]))
+                db.execute("UPDATE grants SET status='frozen' WHERE secret=? AND gen=? AND status='active'",
+                           (r["secret"], new["new_gen"]))
+                db.execute("UPDATE plans SET status='frozen' WHERE secret=? AND gen=? AND status IN ('planned','partial')",
+                           (r["secret"], new["new_gen"]))
         return {"decision": "closure_reopened" if reopened else "quarantined"}
     if op == "resolve_orphan":
         old = one(db, "SELECT * FROM orphans WHERE id=?", (r["id"],))

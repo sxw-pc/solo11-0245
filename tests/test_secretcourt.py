@@ -62,6 +62,24 @@ class SecretCourtTests(unittest.TestCase):
         self.assertEqual(one(self.db, "SELECT status FROM plans WHERE id='plan-old'")["status"], "complete")
         self.assertEqual(invoke(self.db, "grant", {"op":"identity","id":"worker-a","uid":"uid-a","namespace":"checkout","environment":"prod","generation":1})["decision"], "stale_identity")
 
+    def test_identity_generation_change_with_same_uid_freezes_pending_delivery(self):
+        self.fixture("material", "material_normal.json")
+        self.fixture("grant", "grant_normal.json")
+        plan=json.loads((ROOT/"fixtures"/"delivery_normal.json").read_text(encoding="utf-8"))[0]
+        self.assertEqual(invoke(self.db,"delivery",plan)["decision"],"planned")
+        self.assertEqual(invoke(self.db,"grant",{"op":"identity","id":"worker-a","uid":"uid-a","namespace":"checkout","environment":"prod","generation":2})["decision"],"observed")
+        self.assertEqual(one(self.db,"SELECT status FROM grants WHERE id='grant-a-1'")["status"],"frozen")
+        self.assertEqual(one(self.db,"SELECT status FROM plans WHERE id='plan-old'")["status"],"frozen")
+        receipt=json.loads((ROOT/"fixtures"/"delivery_normal.json").read_text(encoding="utf-8"))[1]
+        self.assertEqual(invoke(self.db,"delivery",receipt)["decision"],"plan_frozen")
+
+    def test_undelivered_member_cannot_claim_old_copy_clearance(self):
+        self.fixture("material", "material_normal.json")
+        self.fixture("grant", "grant_normal.json")
+        plan=json.loads((ROOT/"fixtures"/"delivery_normal.json").read_text(encoding="utf-8"))[0]
+        invoke(self.db,"delivery",plan)
+        self.assertEqual(invoke(self.db,"delivery",{"op":"receipt","id":"false-clear","plan":"plan-old","uid":"uid-a","kind":"cleared","packet":"sha256:packet-one","at":22})["decision"],"copy_never_delivered")
+
     def test_revocation_freezes_unfinished_delivery(self):
         self.fixture("material", "material_normal.json")
         self.fixture("grant", "grant_normal.json")
@@ -131,9 +149,12 @@ class SecretCourtTests(unittest.TestCase):
         self.fixture("delivery","delivery_failure.json")
         self.assertEqual(invoke(self.db,"delivery",{"op":"orphan","id":"late-copy","secret":"payments","gen":1,"uid":"late-uid"})["decision"],"closure_reopened")
         self.assertEqual(one(self.db,"SELECT status FROM reseals WHERE id='reseal-one'")["status"],"reopened")
+        self.assertEqual(one(self.db,"SELECT status FROM versions WHERE secret='payments' AND gen=2")["status"],"at_risk")
+        self.assertEqual(one(self.db,"SELECT status FROM grants WHERE id='grant-a-2'")["status"],"frozen")
         self.assertEqual(invoke(self.db,"delivery",{"op":"close_reseal","id":"reseal-one"})["decision"],"orphan_copy_remains")
         self.assertEqual(invoke(self.db,"delivery",{"op":"resolve_orphan","id":"late-copy","uid":"late-uid","isolation_receipt":"late-isolate"})["decision"],"cleared")
         self.assertEqual(invoke(self.db,"delivery",{"op":"close_reseal","id":"reseal-one"})["decision"],"reseal_complete")
+        self.assertEqual(one(self.db,"SELECT status FROM versions WHERE secret='payments' AND gen=2")["status"],"active")
 
     def test_all_six_fixtures_replay_exact_business_state(self):
         self.base()

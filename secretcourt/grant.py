@@ -12,8 +12,8 @@ def run(db, r):
             return {"decision": "reused" if same else "stale_identity"}
         db.execute("INSERT INTO identities VALUES(?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET namespace=excluded.namespace,uid=excluded.uid,environment=excluded.environment,generation=excluded.generation,active=1",
                    (r["id"], r["namespace"], r["uid"], r["environment"], r["generation"]))
-        if old and (old["uid"], old["namespace"], old["environment"]) != (
-            r["uid"], r["namespace"], r["environment"]):
+        if old and (old["uid"], old["namespace"], old["environment"], old["generation"]) != (
+            r["uid"], r["namespace"], r["environment"], r["generation"]):
             db.execute("UPDATE grants SET status='frozen' WHERE identity=? AND status='active'", (r["id"],))
             db.execute("UPDATE plans SET status='frozen' WHERE id IN (SELECT m.plan_id FROM members m JOIN grants g ON g.id=m.grant_id WHERE g.identity=?) AND status IN ('planned','partial')", (r["id"],))
         return {"decision": "observed", "uid": r["uid"]}
