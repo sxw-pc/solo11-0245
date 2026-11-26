@@ -26,6 +26,8 @@ def connect(path):
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA busy_timeout=5000")
     db.executescript(SCHEMA)
+    from .revocation_effect import EFFECT_SCHEMA
+    db.executescript(EFFECT_SCHEMA)
     return db
 
 @contextmanager
@@ -57,8 +59,14 @@ def record(db, subsystem, payload, result):
     return result
 
 def invoke(db, subsystem, payload):
-    from . import material, grant, delivery
-    modules = {"material": material, "grant": grant, "delivery": delivery}
+    from . import material, grant, delivery, revocation_effect
+    modules = {
+        "material": material,
+        "grant": grant,
+        "delivery": delivery,
+        "revocation_effect": revocation_effect,
+        "effect": revocation_effect,
+    }
     with tx(db):
         result = modules[subsystem].run(db, payload)
         return record(db, subsystem, payload, result)
@@ -74,6 +82,12 @@ def replay(path):
             divergent.append({"step": i, "reason": "decision", "actual": actual})
     for table in ["secrets", "versions", "exposures", "lineage_proofs", "identities", "policies", "approvals", "grants",
                   "revocations", "plans", "members", "receipts", "reseals", "orphans"]:
+        before = [tuple(row) for row in source.execute("SELECT * FROM " + table + " ORDER BY rowid")]
+        after = [tuple(row) for row in target.execute("SELECT * FROM " + table + " ORDER BY rowid")]
+        if before != after:
+            divergent.append({"table": table, "reason": "state"})
+    from .revocation_effect import EFFECT_TABLE_NAMES
+    for table in EFFECT_TABLE_NAMES:
         before = [tuple(row) for row in source.execute("SELECT * FROM " + table + " ORDER BY rowid")]
         after = [tuple(row) for row in target.execute("SELECT * FROM " + table + " ORDER BY rowid")]
         if before != after:

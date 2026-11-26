@@ -5,7 +5,7 @@ from .store import connect, invoke, replay, rows
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["material", "grant", "delivery", "demo", "report", "replay"])
+    parser.add_argument("command", choices=["material", "grant", "delivery", "revocation_effect", "effect", "demo", "report", "replay"])
     parser.add_argument("--db", default="demo.sqlite")
     parser.add_argument("--fixture")
     args = parser.parse_args()

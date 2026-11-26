@@ -35,6 +35,19 @@ python -m secretcourt replay --db state.sqlite
 
 `demo` 执行同一顺序。六个 fixture 包含正常及改变业务结果的失败场景。事件日志保存完整输入和返回结论；`replay` 在空数据库中重新执行事件，再逐表比较持久化状态。
 
+## 吊销实效庭（revocation_effect）
+
+控制面的 `revoked` 状态和一张 `cleared` 回执只证明数据库与包摘要，不能证明进程内存、挂载或外部缓存里的旧值已经失效。`secretcourt/revocation_effect.py` 是唯一的“有效吊销证明”签发者，`material.py` 的 `retire` 与 `delivery.py` 的 `effect_clear`/带 `effect_proof` 的 `close_reseal` 都消费同一张 `effect_proofs` 证明（`classify_proof`/`valid_proof`）。
+
+一个实效案把每份旧值副本绑定到实例 UID、副本名、**容器代次**、进程内存/挂载/外部缓存等表面和最近成功使用序号。吊销命令（console）、容器退出事件（runtime）、KMS 轮换回单（kms）都必须先用带外登记的凭据独立验真；真实使用探针出现 `old_accepted` 会抬高可用窗口高水位，之后没有更高序号的 `old_rejected`/`old_unreachable` 就阻断完成。分区副本以重新联系时间为完成界限，孤儿副本必须隔离，同名实例的新容器代次不能借用旧代次的清退或证明。
+
+两条修复路径签发同样的证明，但证据与业务形态不同：
+
+- `quiesce`（停机隔离）：逐代验证退出、隔离存储与内存镜像、阻断业务写入（`writes_blocked`），并实测旧值不可达；已确认写入以 `quarantined` 形式封存在镜像中，恢复前客户无法读写。
+- `dual_read`（受控双读不停机）：必须开具有有限 `deadline_seq`/`deadline_at` 的双读窗口（拒绝无限期双授），把已确认写入 `rewrite` 到新密钥并验证可在新值下正确读取，逐实例测得旧值被拒绝、缓存延迟到期或缓存清除回执齐备后才能关闭双读。
+
+迟到的旧值使用会把有效证明标记为 `challenged` 并产生 `late_old_use` 事故通知；原证明、原清退回执和事件日志一律保留，只能通过更正记录（`correct`）与 `supersedes` 新证明接续，不能无痕撤回。所有新表都接入 `store.replay` 的逐表重放比对。
+
 ## 关键边界
 
 1. 同代不同摘要、跳代密封或替换为相同材料摘要均不成立；关闭暴露案仍不能复活冻结的授权。

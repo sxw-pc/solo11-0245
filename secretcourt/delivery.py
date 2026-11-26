@@ -1,8 +1,46 @@
 """Frozen recipient roster, receipts, orphan copies, and reseal closure."""
 from .store import one, rows
+from . import revocation_effect
+
+
+def _proof_ref(r):
+    return r.get("effect_proof") or r.get("proof") or r.get("proof_id")
+
+
+def _authorize_strong_clear(db, r, plan):
+    """Validate the shared effective-revocation proof for a strong clearance.
+
+    Returns ``(proof, error_decision)``; exactly one is non-None.  The proof
+    must cover the plan's secret/old generation and the exact UID plus
+    container generation presenting the clearance, so a same-name rebuilt
+    instance cannot inherit the previous generation's conclusion.
+    """
+    proof_ref = _proof_ref(r)
+    if not proof_ref:
+        return None, {"decision": "effect_proof_required"}
+    if r.get("container_gen") is None:
+        return None, {"decision": "container_generation_required"}
+    proof, err = revocation_effect.classify_proof(
+        db, proof_ref, secret=plan["secret"], gen=plan["gen"])
+    if err:
+        return None, {"decision": err}
+    matched = revocation_effect.valid_proof(
+        db, proof_ref, secret=plan["secret"], gen=plan["gen"],
+        uid=r["uid"], container_gen=r["container_gen"])
+    if not matched:
+        return None, {"decision": "effect_proof_generation_scope_mismatch"}
+    return proof, None
 
 def run(db, r):
     op = r["op"]
+    if op in ("effect_clear", "clear_effective"):
+        # Strong clearance entry point: same receipt persistence as "cleared",
+        # but the shared effective-revocation proof is mandatory.
+        r = dict(r)
+        r["op"] = "receipt"
+        r["kind"] = "cleared"
+        r["strong"] = True
+        op = "receipt"
     if op == "plan":
         members = r.get("members", [])
         uids = [m["uid"] for m in members]
@@ -54,11 +92,23 @@ def run(db, r):
                            (r["plan"], r["uid"]))
             if not previous:
                 return {"decision": "copy_never_delivered"}
+            proof_ref = _proof_ref(r)
+            if r.get("strong") or proof_ref:
+                proof, denied = _authorize_strong_clear(db, r, plan)
+                if denied:
+                    return denied
         db.execute("INSERT INTO receipts VALUES(?,?,?,?,?,?)", (r["id"], r["plan"], r["uid"], r["kind"], r["packet"], r["at"]))
         db.execute("UPDATE members SET status=? WHERE plan_id=? AND uid=?", (r["kind"], r["plan"], r["uid"]))
+        if r["kind"] == "cleared" and _proof_ref(r):
+            revocation_effect.consume_proof(
+                db, _proof_ref(r), "delivery.effect_clear", r["id"], r.get("at"),
+                {"plan": r["plan"], "uid": r["uid"], "container_gen": r.get("container_gen")})
         pending = one(db, "SELECT COUNT(*) n FROM members WHERE plan_id=? AND status='pending'", (r["plan"],))["n"]
         if r["kind"] == "delivered" and plan["status"] != "frozen":
             db.execute("UPDATE plans SET status=? WHERE id=?", ("complete" if not pending else "partial", r["plan"]))
+        if r["kind"] == "cleared" and r.get("strong"):
+            return {"decision": "effect_cleared", "pending": pending,
+                    "effect_proof": _proof_ref(r)}
         return {"decision": r["kind"], "pending": pending}
     if op == "orphan":
         old = one(db, "SELECT * FROM orphans WHERE id=?", (r["id"],))
@@ -99,6 +149,12 @@ def run(db, r):
             return {"decision": "unknown_reseal"}
         if case["status"] == "complete":
             return {"decision": "reused"}
+        proof_ref = _proof_ref(r)
+        if proof_ref:
+            proof, err = revocation_effect.classify_proof(
+                db, proof_ref, secret=case["secret"], gen=case["old_gen"])
+            if err:
+                return {"decision": err}
         old_members = rows(db, "SELECT m.uid,m.status FROM members m JOIN plans p ON p.id=m.plan_id WHERE p.secret=? AND p.gen=?",
                            (case["secret"], case["old_gen"]))
         if any(m["status"] != "cleared" for m in old_members):
@@ -114,5 +170,11 @@ def run(db, r):
         db.execute("UPDATE reseals SET status='complete' WHERE id=?", (r["id"],))
         db.execute("UPDATE versions SET status='retired' WHERE secret=? AND gen=?", (case["secret"], case["old_gen"]))
         db.execute("UPDATE versions SET status='active' WHERE secret=? AND gen=?", (case["secret"], case["new_gen"]))
-        return {"decision": "reseal_complete", "members": len(new_members)}
+        result = {"decision": "reseal_complete", "members": len(new_members)}
+        if proof_ref:
+            revocation_effect.consume_proof(
+                db, proof_ref, "delivery.close_reseal", r["id"], r.get("at"),
+                {"secret": case["secret"], "old_gen": case["old_gen"]})
+            result["effect_proof"] = proof_ref
+        return result
     raise ValueError(op)

@@ -1,5 +1,6 @@
 """Secret lineage, exposure, and reseal source evidence."""
 from .store import one, rows
+from . import revocation_effect
 
 def run(db, r):
     op = r["op"]
@@ -85,4 +86,31 @@ def run(db, r):
             return {"decision": "missing_lineage_proof"}
         db.execute("INSERT INTO reseals VALUES(?,?,?,?,?,?)", (r["id"], r["secret"], r["old_gen"], r["new_gen"], r["proof"], "open"))
         return {"decision": "reseal_open"}
+    if op in ("retire", "retire_version"):
+        # Version retirement shares the exact same effective-revocation proof
+        # as delivery clearance; a control-plane revoke or bare cleared receipt
+        # is not sufficient.
+        proof_ref = r.get("effect_proof") or r.get("proof") or r.get("proof_id")
+        if not proof_ref:
+            return {"decision": "effect_proof_required"}
+        version = one(db, "SELECT * FROM versions WHERE secret=? AND gen=?", (r["secret"], r["gen"]))
+        if not version:
+            return {"decision": "unknown_version"}
+        proof, err = revocation_effect.classify_proof(
+            db, proof_ref, secret=r["secret"], gen=r["gen"])
+        if err:
+            return {"decision": err}
+        ref_id = "%s@%s" % (r["secret"], r["gen"])
+        prior = one(db, "SELECT * FROM effect_consumption WHERE consumer='material.retire' AND ref_id=?",
+                    (ref_id,))
+        if version["status"] == "retired":
+            if prior and prior["proof_id"] == proof_ref:
+                return {"decision": "reused", "status": "retired", "effect_proof": proof_ref}
+            return {"decision": "version_already_retired"}
+        db.execute("UPDATE versions SET status='retired' WHERE secret=? AND gen=?", (r["secret"], r["gen"]))
+        revocation_effect.consume_proof(
+            db, proof_ref, "material.retire", ref_id, r.get("at"),
+            {"secret": r["secret"], "gen": r["gen"]})
+        return {"decision": "version_retired", "status": "retired",
+                "secret": r["secret"], "gen": r["gen"], "effect_proof": proof_ref}
     raise ValueError(op)
