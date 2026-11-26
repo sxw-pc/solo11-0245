@@ -57,8 +57,14 @@ def record(db, subsystem, payload, result):
     return result
 
 def invoke(db, subsystem, payload):
-    from . import material, grant, delivery
-    modules = {"material": material, "grant": grant, "delivery": delivery}
+    from . import material, grant, delivery, incident_notice
+    modules = {"material": material, "grant": grant, "delivery": delivery,
+               "notice": incident_notice}
+    # DDL (executescript) implicitly commits and would break the tx() savepoint, so
+    # lazily created module schemas run before the transaction, in autocommit.
+    prepare = getattr(modules[subsystem], "ensure_schema", None)
+    if prepare is not None:
+        prepare(db)
     with tx(db):
         result = modules[subsystem].run(db, payload)
         return record(db, subsystem, payload, result)
